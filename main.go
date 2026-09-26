@@ -9,6 +9,7 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type model struct {
@@ -106,7 +107,18 @@ func (m model) View() tea.View {
 	s += "\nPress q to quit.\n"
 
 	// Send the UI for rendering
-	return tea.NewView(s)
+	style := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		Bold(true).
+		Padding(4, 4).
+		Margin(4, 4).
+		MarginChar('猫').
+		Width(80).
+		Align(lipgloss.Center)
+	v := tea.NewView(style.Render(s))
+	v.AltScreen = true
+	v.WindowTitle = "Minesweeper"
+	return v
 }
 
 func main() {
