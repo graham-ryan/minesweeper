@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,9 +12,10 @@ import (
 )
 
 type tile struct {
-	isBomb    bool
-	isCleared bool
-	isFlagged bool
+	isBomb        bool
+	isCleared     bool
+	isFlagged     bool
+	adjacentBombs int // Predetermined before the game starts
 }
 
 type vector struct {
@@ -50,6 +52,47 @@ func initialModel(gridSize int) model {
 		}
 	}
 
+	// 4. Figure out how many bombs each jit has around
+	for i := 0; i < len(grid); i++ {
+		for j := 0; j < len(grid[0]); j++ {
+			if grid[i][j].isBomb {
+				// i-1, j-1
+				if i > 0 && j > 0 {
+					grid[i-1][j-1].adjacentBombs += 1
+				}
+				// i-1, j
+				if i > 0 {
+					grid[i-1][j].adjacentBombs += 1
+				}
+				// i-1, j+1
+				if i > 0 && j < len(grid[0])-1 {
+					grid[i-1][j+1].adjacentBombs += 1
+				}
+				// i, j-1
+				if j > 0 {
+					grid[i][j-1].adjacentBombs += 1
+				}
+				// i, j+1
+				if j < len(grid[0])-1 {
+					grid[i][j+1].adjacentBombs += 1
+				}
+				// i+1, j-1
+				if i < len(grid)-1 && j > 0 {
+					grid[i+1][j-1].adjacentBombs += 1
+				}
+				// i+1, j
+				if i < len(grid)-1 {
+					grid[i+1][j].adjacentBombs += 1
+				}
+
+				// i+1, j+1
+				if i < len(grid)-1 && j < len(grid[0])-1 {
+					grid[i+1][j+1].adjacentBombs += 1
+				}
+			}
+		}
+	}
+
 	return model{
 		grid,
 		vector{0, 0},
@@ -60,6 +103,42 @@ func initialModel(gridSize int) model {
 func (m model) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
 	return nil
+}
+
+func (m *model) clearAtCursor() {
+	tileAtCursor := &m.grid[m.pointer.y][m.pointer.x]
+	// If there's a bomb here it's game ova
+	if tileAtCursor.isBomb {
+		m.gameOver = true
+	}
+
+	// If there's a flag here we should probably send a message to the screen but oh well
+	if tileAtCursor.isBomb {
+		m.gameOver = true
+	} else {
+		// Otherwise, algorithm to clear everything that isn't bordering a bomb
+		var clearThisAndSurrounding func(x, y int)
+		clearThisAndSurrounding = func(x, y int) {
+			// If this is a 0, we keep spreading
+			// If this is >0, then we just reveal this then stop
+			m.grid[y][x].isCleared = true
+			if m.grid[y][x].adjacentBombs == 0 {
+				if y-1 >= 0 && !m.grid[y-1][x].isCleared {
+					clearThisAndSurrounding(x, y-1)
+				}
+				if y+1 < len(m.grid) && !m.grid[y+1][x].isCleared {
+					clearThisAndSurrounding(x, y+1)
+				}
+				if x-1 >= 0 && !m.grid[y][x-1].isCleared {
+					clearThisAndSurrounding(x-1, y)
+				}
+				if x+1 < len(m.grid[0]) && !m.grid[y][x+1].isCleared {
+					clearThisAndSurrounding(x+1, y)
+				}
+			}
+		}
+		clearThisAndSurrounding(m.pointer.x, m.pointer.y)
+	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -101,6 +180,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.pointer.x = 0
 			}
+
+		case "f":
+			m.grid[m.pointer.y][m.pointer.x].isFlagged = !m.grid[m.pointer.y][m.pointer.x].isFlagged
+
+		case "space":
+			m.clearAtCursor()
 		}
 	}
 
@@ -122,13 +207,11 @@ func (m model) View() tea.View {
 				glyph = "*"
 				style = style.Background(lipgloss.Color("196")).Foreground(lipgloss.Color("231"))
 			case t.isFlagged:
-				glyph = "F"
+				glyph = "f"
 				style = style.Foreground(lipgloss.Color("208")).Bold(true)
 			case t.isCleared:
 				style = style.Background(lipgloss.Color("236"))
-				//if n := m.adjacentBombs(x, y); n > 0 {
-				//	glyph = fmt.Sprint(n)
-				//}
+				glyph = strconv.Itoa(t.adjacentBombs)
 			}
 
 			l, r := " ", " "
